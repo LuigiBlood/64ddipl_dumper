@@ -162,7 +162,7 @@ mainproc(void *arg)
   clear_draw();
   
   setcolor(0,255,0);
-  draw_puts("\f\n    64DD IPL dumper v0.01a by LuigiBlood & marshallh\n    ----------------------------------------\n");
+  draw_puts("\f\n    64DD IPL dumper v0.01b by LuigiBlood & marshallh\n    ----------------------------------------\n");
   setcolor(255,255,255);
   draw_puts("    PRESS START TO DUMP");
 

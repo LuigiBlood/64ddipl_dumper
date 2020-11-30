@@ -11,6 +11,8 @@
 
 #include "fat32.h"
 #include "ci.h"
+#include "asicdrive.h"
+#include "leohax.h"
 
 #define NUM_MESSAGE 	1
 
@@ -44,6 +46,9 @@ OSIoMesg  dmaIoMesgBuf;
 
 OSPiHandle *pi_handle;
 OSPiHandle *pi_ddrom_handle;
+OSPiHandle *LeoDiskHandle;
+
+#include "leotest.h"
 
 #define NUM_LEO_MESGS 8
 static OSMesg           LeoMessages[NUM_LEO_MESGS];
@@ -66,7 +71,7 @@ int fs_fail()
 	return 0;
 }
 
-void fat_start(void)
+void fat_start_ipl(void)
 {
   char filenamestr[20];
   char filenamelogstr[20];
@@ -118,6 +123,110 @@ void fat_start(void)
   loadRamToRom(0x0, user_dump.start_cluster);
 }
 
+void fat_start_h8(void)
+{
+  char filenamestr[20];
+  char filenamelogstr[20];
+  char console_text[50];
+  fat_dirent de_root;
+  fat_dirent user_dump;
+  float fw = ((float)ciGetRevision())/100.0f;
+  u32 device_magic = ciGetMagic();
+  u32 is64drive = (ciGetMagic() == 0x55444556);
+
+  if(fw < 2.00 || fw > 20.00 || !is64drive){
+    draw_puts("\n    - ERROR WRITING TO MEMORY CARD:\n    64DRIVE with FIRMWARE 2.00 or later is required!");
+	while(1);
+  }
+  
+  //sprintf(console_text, "\n    - 64drive with firmware %.2f found", fw);
+  //draw_puts(console_text);
+  
+  sprintf(filenamestr, "64DD_H8ROM.rom");
+
+  sprintf(console_text, "\n    - Writing %s to memory card", filenamestr);
+  draw_puts(console_text);
+  
+  // get FAT going
+  if(fat_init() != 0){
+    fail = 100;
+    fs_fail();
+    return;
+  }
+  
+  // start in root directory
+  fat_root_dirent(&de_root);
+  if(fail != 0){
+    fs_fail();
+    return;
+  }
+  
+  
+  if( fat_find_create(filenamestr, &de_root, &user_dump, 0, 1) != 0){
+    sprintf(fat_message, "Failed to create image dump"); fail = 3;
+    fs_fail(); return;
+  }
+
+  if( fat_set_size(&user_dump, 0x8000) != 0) {
+    sprintf(fat_message, "Failed to resize dump"); fail = 4;
+    fs_fail(); return;
+  }
+
+  loadRamToRom(0x0, user_dump.start_cluster);
+}
+
+void fat_start_reg(void)
+{
+  char filenamestr[20];
+  char filenamelogstr[20];
+  char console_text[50];
+  fat_dirent de_root;
+  fat_dirent user_dump;
+  float fw = ((float)ciGetRevision())/100.0f;
+  u32 device_magic = ciGetMagic();
+  u32 is64drive = (ciGetMagic() == 0x55444556);
+
+  if(fw < 2.00 || fw > 20.00 || !is64drive){
+    draw_puts("\n    - ERROR WRITING TO MEMORY CARD:\n    64DRIVE with FIRMWARE 2.00 or later is required!");
+	while(1);
+  }
+  
+  //sprintf(console_text, "\n    - 64drive with firmware %.2f found", fw);
+  //draw_puts(console_text);
+  
+  sprintf(filenamestr, "64DD_REGDUMP.bin");
+
+  sprintf(console_text, "\n    - Writing %s to memory card", filenamestr);
+  draw_puts(console_text);
+  
+  // get FAT going
+  if(fat_init() != 0){
+    fail = 100;
+    fs_fail();
+    return;
+  }
+  
+  // start in root directory
+  fat_root_dirent(&de_root);
+  if(fail != 0){
+    fs_fail();
+    return;
+  }
+  
+  
+  if( fat_find_create(filenamestr, &de_root, &user_dump, 0, 1) != 0){
+    sprintf(fat_message, "Failed to create image dump"); fail = 3;
+    fs_fail(); return;
+  }
+
+  if( fat_set_size(&user_dump, 0x1000) != 0) {
+    sprintf(fat_message, "Failed to resize dump"); fail = 4;
+    fs_fail(); return;
+  }
+
+  loadRamToRom(0x0, user_dump.start_cluster);
+}
+
 void	
 mainproc(void *arg)
 {	
@@ -146,6 +255,7 @@ mainproc(void *arg)
 
   pi_handle = osCartRomInit();
   pi_ddrom_handle = osDriveRomInit();
+  LeoDiskHandle = osLeoDiskInit();
   
   bzero(blockData, 0x1000);
   readerror = -1;
@@ -155,6 +265,7 @@ mainproc(void *arg)
   setcolor(0,255,0);
   draw_puts("If you see this for a long period of time,\nsomething fucked up. Sorry.");
   
+  haxAll();
   LeoCJCreateLeoManager((OSPri)OS_PRIORITY_LEOMGR-1, (OSPri)OS_PRIORITY_LEOMGR, LeoMessages, NUM_LEO_MESGS);
   LeoResetClear();
 
@@ -162,7 +273,7 @@ mainproc(void *arg)
   clear_draw();
   
   setcolor(0,255,0);
-  draw_puts("\f\n    64DD IPL dumper v0.01b by LuigiBlood & marshallh\n    ----------------------------------------\n");
+  draw_puts("\f\n    64DD IPL Dumper v0.03 by LuigiBlood\n    ----------------------------------------\n");
   setcolor(255,255,255);
   draw_puts("    PRESS START TO DUMP");
 
@@ -183,7 +294,7 @@ mainproc(void *arg)
         //DUMP!!
         
         //64drive, enable write to SDRAM/ROM
-		  srand(osGetCount()); // necessary to generate unique short 8.3 filenames on memory card
+        srand(osGetCount()); // necessary to generate unique short 8.3 filenames on memory card
         ciEnableRomWrites();
 
         draw_puts("\f\n\n\n\n\n    Let's dump! Don't turn off the console!\n\n");
@@ -195,6 +306,7 @@ mainproc(void *arg)
         dmaIoMesgBuf.devAddr = IPLoffset;
         dmaIoMesgBuf.size = 0x1000;
         
+        draw_puts("\n    - Dumping 64DD IPL...");
         for (IPLoffset = 0; IPLoffset < 0x400000; IPLoffset += 0x1000)
         {
           //read 64DD IPL
@@ -222,8 +334,75 @@ mainproc(void *arg)
           osRecvMesg(&dmaMessageQ, NULL, OS_MESG_BLOCK);
         }
 		  
-		  //DONE!! NOW WRITE TO SD
-		  fat_start();
+        //DONE!! NOW WRITE TO SD
+        fat_start_ipl();
+        
+        //Register Dump
+        draw_puts("\n    - Dumping 64DD Registers...");
+        for (i = 0; i < 0x1000; i += 4)
+        {
+        	IPLoffset = ReadLeoReg(ASIC_IO_BASE + i);
+        	blockData[i + 0] = (IPLoffset >> 24) & 0xFF;
+        	blockData[i + 1] = (IPLoffset >> 16) & 0xFF;
+        	blockData[i + 2] = (IPLoffset >> 8) & 0xFF;
+        	blockData[i + 3] = (IPLoffset >> 0) & 0xFF;
+        }
+        
+        //Write to 64drive
+        osWritebackDCacheAll();
+ 
+        dmaIoMesgBuf.hdr.pri = OS_MESG_PRI_NORMAL;
+        dmaIoMesgBuf.hdr.retQueue = &dmaMessageQ;
+        dmaIoMesgBuf.dramAddr = (void *)&blockData;
+        dmaIoMesgBuf.devAddr = 0xB0000000;
+        dmaIoMesgBuf.size = 0x1000;
+                             
+        osEPiStartDma(pi_handle, &dmaIoMesgBuf, OS_WRITE);
+        osRecvMesg(&dmaMessageQ, NULL, OS_MESG_BLOCK);
+		  
+        //DONE!! NOW WRITE TO SD
+        fat_start_reg();
+        
+        //Unlock Commands
+        draw_puts("\n    - Unlocking 64DD H8 Commands...");
+        WriteLeoReg(ASIC_DATA, 0x4C450000);
+        WriteLeoReg(ASIC_CMD, 0x00500000);
+        leoWait_mecha_cmd_done();
+        WriteLeoReg(ASIC_DATA, 0x4F210000);
+        WriteLeoReg(ASIC_CMD, 0x00500000);
+        leoWait_mecha_cmd_done();
+        
+        draw_puts("\n    - Dumping 64DD H8 ROM...");
+        //Read H8 ROM
+        for (IPLoffset = 0; IPLoffset < 0x8000; IPLoffset += 0x1000)
+        {
+          for (i = 0; i < 0x1000; i++)
+          {
+          	//Set Address
+          	WriteLeoReg(ASIC_DATA, (IPLoffset + i) << 16);
+          	WriteLeoReg(ASIC_CMD, 0x00300000);
+          	leoWait_mecha_cmd_done();
+          	
+          	//Read Byte
+          	WriteLeoReg(ASIC_CMD, 0x00310000);
+          	leoWait_mecha_cmd_done();
+          	blockData[i] = (ReadLeoReg(ASIC_DATA) >> 16) & 0xFF;
+          }
+         
+          //Write to 64drive
+          osWritebackDCacheAll();
+ 
+          dmaIoMesgBuf.hdr.pri = OS_MESG_PRI_NORMAL;
+          dmaIoMesgBuf.hdr.retQueue = &dmaMessageQ;
+          dmaIoMesgBuf.dramAddr = (void *)&blockData;
+          dmaIoMesgBuf.devAddr = 0xB0000000 + IPLoffset;
+          dmaIoMesgBuf.size = 0x1000;
+                               
+          osEPiStartDma(pi_handle, &dmaIoMesgBuf, OS_WRITE);
+          osRecvMesg(&dmaMessageQ, NULL, OS_MESG_BLOCK);
+        }
+        
+        fat_start_h8();
         
         draw_puts("\n    - DONE !!\n");
 		
